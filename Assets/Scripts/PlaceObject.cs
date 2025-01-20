@@ -9,25 +9,31 @@ using EnhancedTouchSupport = UnityEngine.InputSystem.EnhancedTouch;
 [RequireComponent(typeof(ARRaycastManager), typeof(ARPlaneManager))]
 public class PlaceObject : MonoBehaviour
 {
-    [SerializeField] private GameObject objectToPlace;
-    private GameObject spawnedObject;
+    [SerializeField] private GameObject[] objectToPlace;
+    private GameObject selectedGameObject;
+    private List<GameObject> spawnedObject = new List<GameObject>();
     private ARRaycastManager arRaycastManager;
     private ARPlaneManager arPlaneManager;
     private List<ARRaycastHit> hits = new List<ARRaycastHit>();
     private float initialDistance;
     private Vector3 initialScale;
+    private bool isObjectPlaced;
+    
+    [Header("Object Index")]
+    public int objectIndex;
 
     private void Awake()
     {
         arRaycastManager = GetComponent<ARRaycastManager>();
         arPlaneManager = GetComponent<ARPlaneManager>();
+        selectedGameObject = objectToPlace[objectIndex];
     }
 
     private void OnEnable()
     {
         EnhancedTouchSupport.EnhancedTouchSupport.Enable();
         EnhancedTouchSupport.TouchSimulation.Enable();
-        EnhancedTouchSupport.Touch.onFingerDown += OnFigureDown;
+        EnhancedTouchSupport.Touch.onFingerDown += OnFingerDown;
         EnhancedTouchSupport.Touch.onFingerMove += OnFigureMoveObject;
         EnhancedTouchSupport.Touch.onFingerUp += OnFigureUp;
     }
@@ -36,19 +42,66 @@ public class PlaceObject : MonoBehaviour
     {
         EnhancedTouchSupport.EnhancedTouchSupport.Disable();
         EnhancedTouchSupport.TouchSimulation.Disable();
-        EnhancedTouchSupport.Touch.onFingerDown -= OnFigureDown;
+        EnhancedTouchSupport.Touch.onFingerDown -= OnFingerDown;
         EnhancedTouchSupport.Touch.onFingerMove -= OnFigureMoveObject;
         EnhancedTouchSupport.Touch.onFingerUp -= OnFigureUp;
     }
+    
+    private void SelectObjectToPlace(int index)
+    {
+        if (index >= 0 && index < objectToPlace.Length)
+        {
+            selectedGameObject = objectToPlace[index];
+        }
+    }
+    
+    public void OnNextButtonClicked()
+    {
+        objectIndex++;
+        if (objectIndex >= objectToPlace.Length)
+        {
+            objectIndex = 0;
+        }
+        SelectObjectToPlace(objectIndex);
+    }
+    
+    public void OnPreviousButtonClicked()
+    {
+        objectIndex--;
+        if (objectIndex < 0)
+        {
+            objectIndex = objectToPlace.Length - 1;
+        }
+        SelectObjectToPlace(objectIndex);
+    }
 
-    private void OnFigureDown(EnhancedTouchSupport.Finger finger)
+    private void OnFingerDown(EnhancedTouchSupport.Finger finger)
     {
         if (finger.index != 0) return;
 
         if (arRaycastManager.Raycast(finger.currentTouch.screenPosition, hits, TrackableType.PlaneWithinPolygon))
         {
-            var hitPose = hits[0].pose;
-            spawnedObject = Instantiate(objectToPlace, hitPose.position, hitPose.rotation);
+            if (arRaycastManager.Raycast(finger.currentTouch.screenPosition, hits, TrackableType.PlaneWithinPolygon))
+            {
+                var hitPose = hits[0].pose;
+                var newObject = Instantiate(selectedGameObject, hitPose.position, hitPose.rotation);
+                spawnedObject.Add(newObject);
+
+                // Check if the touch is on any spawned object
+                Ray ray = Camera.main.ScreenPointToRay(finger.currentTouch.screenPosition);
+                RaycastHit hit;
+                if (Physics.Raycast(ray, out hit))
+                {
+                    foreach (var obj in spawnedObject)
+                    {
+                        if (hit.transform == obj.transform)
+                        {
+                            selectedGameObject = obj;
+                            break;
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -61,7 +114,7 @@ public class PlaceObject : MonoBehaviour
             if (arRaycastManager.Raycast(finger.currentTouch.screenPosition, hits, TrackableType.PlaneWithinPolygon))
             {
                 var hitPose = hits[0].pose;
-                spawnedObject.transform.position = hitPose.position;
+                selectedGameObject.transform.position = hitPose.position;
             }
         }
         else if (EnhancedTouchSupport.Touch.activeFingers.Count == 2)
@@ -72,7 +125,7 @@ public class PlaceObject : MonoBehaviour
             if (finger1.currentTouch.phase == UnityEngine.InputSystem.TouchPhase.Began || finger2.currentTouch.phase == UnityEngine.InputSystem.TouchPhase.Began)
             {
                 initialDistance = Vector2.Distance(finger1.screenPosition, finger2.screenPosition);
-                initialScale = spawnedObject.transform.localScale;
+                initialScale = selectedGameObject.transform.localScale;
             }
             else
             {
@@ -80,7 +133,7 @@ public class PlaceObject : MonoBehaviour
                 if (Mathf.Approximately(initialDistance, 0)) return;
 
                 float scaleFactor = currentDistance / initialDistance;
-                spawnedObject.transform.localScale = initialScale * scaleFactor;
+                selectedGameObject.transform.localScale = initialScale * scaleFactor;
             }
         }
     }
@@ -91,5 +144,6 @@ public class PlaceObject : MonoBehaviour
         {
             initialDistance = 0;
         }
+        isObjectPlaced = false;
     }
 }
