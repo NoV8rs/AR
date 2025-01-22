@@ -9,24 +9,20 @@ using EnhancedTouchSupport = UnityEngine.InputSystem.EnhancedTouch;
 [RequireComponent(typeof(ARRaycastManager), typeof(ARPlaneManager))]
 public class PlaceObject : MonoBehaviour
 {
-    [SerializeField] private GameObject[] objectToPlace;
     private GameObject selectedGameObject;
-    private List<GameObject> spawnedObject = new List<GameObject>();
+    private GameObject spawnedObject;
     private ARRaycastManager arRaycastManager;
     private ARPlaneManager arPlaneManager;
     private List<ARRaycastHit> hits = new List<ARRaycastHit>();
     private float initialDistance;
     private Vector3 initialScale;
+    private float initialRotation;
     private bool isObjectPlaced;
-    
-    [Header("Object Index")]
-    public int objectIndex;
 
     private void Awake()
     {
         arRaycastManager = GetComponent<ARRaycastManager>();
         arPlaneManager = GetComponent<ARPlaneManager>();
-        selectedGameObject = objectToPlace[objectIndex];
     }
 
     private void OnEnable()
@@ -46,62 +42,19 @@ public class PlaceObject : MonoBehaviour
         EnhancedTouchSupport.Touch.onFingerMove -= OnFigureMoveObject;
         EnhancedTouchSupport.Touch.onFingerUp -= OnFigureUp;
     }
-    
-    private void SelectObjectToPlace(int index)
-    {
-        if (index >= 0 && index < objectToPlace.Length)
-        {
-            selectedGameObject = objectToPlace[index];
-        }
-    }
-    
-    public void OnNextButtonClicked()
-    {
-        objectIndex++;
-        if (objectIndex >= objectToPlace.Length)
-        {
-            objectIndex = 0;
-        }
-        SelectObjectToPlace(objectIndex);
-    }
-    
-    public void OnPreviousButtonClicked()
-    {
-        objectIndex--;
-        if (objectIndex < 0)
-        {
-            objectIndex = objectToPlace.Length - 1;
-        }
-        SelectObjectToPlace(objectIndex);
-    }
 
     private void OnFingerDown(EnhancedTouchSupport.Finger finger)
     {
-        if (finger.index != 0) return;
+        if (finger.index != 0 || EventSystem.current.IsPointerOverGameObject(finger.index)) return;
 
         if (arRaycastManager.Raycast(finger.currentTouch.screenPosition, hits, TrackableType.PlaneWithinPolygon))
         {
-            if (arRaycastManager.Raycast(finger.currentTouch.screenPosition, hits, TrackableType.PlaneWithinPolygon))
+            var hitPose = hits[0].pose;
+            if (spawnedObject != null)
             {
-                var hitPose = hits[0].pose;
-                var newObject = Instantiate(selectedGameObject, hitPose.position, hitPose.rotation);
-                spawnedObject.Add(newObject);
-
-                // Check if the touch is on any spawned object
-                Ray ray = Camera.main.ScreenPointToRay(finger.currentTouch.screenPosition);
-                RaycastHit hit;
-                if (Physics.Raycast(ray, out hit))
-                {
-                    foreach (var obj in spawnedObject)
-                    {
-                        if (hit.transform == obj.transform)
-                        {
-                            selectedGameObject = obj;
-                            break;
-                        }
-                    }
-                }
+                Destroy(spawnedObject);
             }
+            spawnedObject = Instantiate(selectedGameObject, hitPose.position, hitPose.rotation);
         }
     }
 
@@ -114,7 +67,7 @@ public class PlaceObject : MonoBehaviour
             if (arRaycastManager.Raycast(finger.currentTouch.screenPosition, hits, TrackableType.PlaneWithinPolygon))
             {
                 var hitPose = hits[0].pose;
-                selectedGameObject.transform.position = hitPose.position;
+                spawnedObject.transform.position = hitPose.position;
             }
         }
         else if (EnhancedTouchSupport.Touch.activeFingers.Count == 2)
@@ -125,7 +78,8 @@ public class PlaceObject : MonoBehaviour
             if (finger1.currentTouch.phase == UnityEngine.InputSystem.TouchPhase.Began || finger2.currentTouch.phase == UnityEngine.InputSystem.TouchPhase.Began)
             {
                 initialDistance = Vector2.Distance(finger1.screenPosition, finger2.screenPosition);
-                initialScale = selectedGameObject.transform.localScale;
+                initialScale = spawnedObject.transform.localScale;
+                initialRotation = Vector2.SignedAngle(finger1.screenPosition, finger2.screenPosition);
             }
             else
             {
@@ -133,8 +87,13 @@ public class PlaceObject : MonoBehaviour
                 if (Mathf.Approximately(initialDistance, 0)) return;
 
                 float scaleFactor = currentDistance / initialDistance;
-                selectedGameObject.transform.localScale = initialScale * scaleFactor;
+                spawnedObject.transform.localScale = initialScale * scaleFactor;
             }
+            
+            float currentRotation = Vector2.SignedAngle(finger1.screenPosition,finger2.screenPosition);
+            float rotationFactor = currentRotation - initialRotation;
+            spawnedObject.transform.Rotate(Vector3.up, rotationFactor);
+            initialRotation = currentRotation;
         }
     }
     
